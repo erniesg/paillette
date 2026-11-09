@@ -10,17 +10,18 @@ import {
 import {
   getSearchSpotlightPath,
   getSpotlightArtworks,
+  getSpotlightHighlightArtworks,
   getSpotlightSearchPlaceholder,
   getSpotlightSearchSubmissionOptions,
   loadSearchSpotlightBundle,
 } from '../search-spotlights';
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { NGA_SPOTLIGHT_DEFINITIONS } from '../nga-spotlight-definitions';
-import { NGS_SPOTLIGHT_DEFINITIONS } from '../ngs-spotlight-definitions';
+import { NGS_PREPARED_SPOTLIGHT_DEFINITIONS } from '../ngs-spotlight-definitions';
 
 const artwork = (id: string, provider: 'nga' | 'ngs' = 'nga') => ({
   id,
-  orgId: 'nga',
+  orgId: provider,
   title: `Artwork ${id}`,
   artist: `Artist ${id}`,
   year: 1900 + Number(id),
@@ -60,12 +61,13 @@ const validNgsBundle: PublicSearchSpotlightBundle = {
   ...validBundle,
   corpusVersion: 'ngs-fixture-v1',
   provider: 'ngs',
-  suggestions: NGS_SPOTLIGHT_DEFINITIONS.map((definition, index) => ({
-    ...definition,
-    artworks: [1, 2, 3, 4].map((cardIndex) =>
-      artwork(String(index * 4 + cardIndex), 'ngs')
-    ),
-  })),
+  suggestions: NGS_PREPARED_SPOTLIGHT_DEFINITIONS.map((definition, index) => {
+    const artworks = [1, 2, 3, 4].map((cardIndex) => ({
+      ...artwork(String(index * 4 + cardIndex), 'ngs'),
+      similarity: 0.9,
+    }));
+    return { ...definition, artworks, highlightArtworks: artworks.slice(0, 2) };
+  }),
 };
 
 const responseFor = (value: unknown, status = 200) =>
@@ -106,7 +108,7 @@ describe('search spotlight loading', () => {
     expect(assetPath.endsWith(`-${digest}.json`)).toBe(true);
   });
 
-  it('loads the content-addressed NGS cache through the WorkOS session proxy', async () => {
+  it('loads all prepared NGS terms through the WorkOS session proxy without live search', async () => {
     const fetcher = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(
@@ -119,13 +121,26 @@ describe('search spotlight loading', () => {
     });
 
     expect(getSearchSpotlightPath('ngs')).toMatch(
-      /^\/orgs\/ngs\/search-spotlights\/v32-[a-f0-9]{64}$/
+      /^\/orgs\/ngs\/search-spotlights\/prepared-v32$/
     );
     expect(loaded).toEqual(validNgsBundle);
+    expect(loaded?.suggestions).toHaveLength(25);
+    expect(
+      getSpotlightSearchPlaceholder(loaded, {
+        query: 'Christmas Day',
+        topK: 30,
+        minScore: 0.2,
+      })?.results
+    ).toHaveLength(4);
+    expect(getSpotlightHighlightArtworks(loaded, 'christmas-day')).toHaveLength(
+      2
+    );
+    expect(getSpotlightArtworks(loaded, 'christmas-day')).toHaveLength(4);
+    expect(fetcher).toHaveBeenCalledOnce();
     expect(getAccessToken).not.toHaveBeenCalled();
     expect(fetcher).toHaveBeenCalledWith(
       expect.stringMatching(
-        /^\/api\/backend\/orgs\/ngs\/search-spotlights\/v32-[a-f0-9]{64}$/
+        /^\/api\/backend\/orgs\/ngs\/search-spotlights\/prepared-v32$/
       ),
       expect.objectContaining({
         headers: {},

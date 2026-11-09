@@ -1,10 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../index';
 import { getAuth, requireAuthOrApiKey } from '../middleware/auth';
-import {
-  OPEN_ACCESS_ORG_ID,
-  isNgsPublicOrg,
-} from '../utils/orgs';
+import { OPEN_ACCESS_ORG_ID, isNgsPublicOrg } from '../utils/orgs';
 
 interface AssetRow {
   id: string;
@@ -19,11 +16,7 @@ interface AssetRow {
 
 const assets = new Hono<{ Bindings: Env }>();
 
-const canReadAsset = async (
-  env: Env,
-  userId: string,
-  orgId: string
-) => {
+const canReadAsset = async (env: Env, userId: string, orgId: string) => {
   const row = await env.DB.prepare(
     `
       SELECT 1 AS allowed
@@ -51,7 +44,15 @@ const isPublicNgaAsset = (asset: AssetRow) =>
 const isNgsAsset = (asset: AssetRow) =>
   isNgsPublicOrg(asset.org_slug) || isNgsPublicOrg(asset.org_id);
 
+const PRIVATE_REVALIDATE = 'private, no-cache, must-revalidate';
+const matchesEtag = (request: string, etag: string) =>
+  request.split(',').some((value) => {
+    const tag = value.trim().replace(/^W\//, '');
+    return tag === '*' || tag === etag.replace(/^W\//, '');
+  });
+
 assets.get('/:assetId/content', async (c) => {
+  c.header('Cache-Control', 'private, no-store');
   const assetId = c.req.param('assetId');
 
   const asset = await c.env.DB.prepare(
@@ -89,14 +90,24 @@ assets.get('/:assetId/content', async (c) => {
     // assets. Authenticate here only after identifying a public NGA asset.
     // With no credentials, use the same response as an absent asset to avoid
     // turning this endpoint into an asset-existence oracle.
-    if (!c.req.header('Authorization') && !c.req.header('X-API-Key') && !c.req.header('X-User-Id')) {
+    if (
+      !c.req.header('Authorization') &&
+      !c.req.header('X-API-Key') &&
+      !c.req.header('X-User-Id')
+    ) {
       return c.json(
-        { success: false, error: { code: 'NOT_FOUND', message: 'Asset not found' } },
+        {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Asset not found' },
+        },
         404
       );
     }
 
-    const authResult = await requireAuthOrApiKey(c as any, async () => undefined);
+    const authResult = await requireAuthOrApiKey(
+      c as any,
+      async () => undefined
+    );
     if (authResult) return authResult;
     const auth = getAuth(c as any);
     const canRead =
@@ -107,7 +118,10 @@ assets.get('/:assetId/content', async (c) => {
           : false;
     if (!canRead) {
       return c.json(
-        { success: false, error: { code: 'NOT_FOUND', message: 'Asset not found' } },
+        {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Asset not found' },
+        },
         404
       );
     }
@@ -134,6 +148,24 @@ assets.get('/:assetId/content', async (c) => {
     return c.redirect(asset.url);
   }
 
+  // A browser may retain NGS bytes, but must prove current access before
+  // reusing them. Never move this conditional check above authorization.
+  const privateNgs = !isPublicNgaAsset(asset) && isNgsAsset(asset);
+  const ifNoneMatch = c.req.header('If-None-Match');
+  if (privateNgs && ifNoneMatch) {
+    const stored = await c.env.IMAGES.head(asset.object_key);
+    if (stored && matchesEtag(ifNoneMatch, stored.httpEtag)) {
+      return new Response(null, {
+        status: 304,
+        headers: {
+          'Cache-Control': PRIVATE_REVALIDATE,
+          ETag: stored.httpEtag,
+          Vary: 'Authorization',
+        },
+      });
+    }
+  }
+
   const object = await c.env.IMAGES.get(asset.object_key);
 
   if (!object) {
@@ -154,8 +186,13 @@ assets.get('/:assetId/content', async (c) => {
   headers.set('ETag', object.httpEtag);
   headers.set(
     'Cache-Control',
-    isPublicNgaAsset(asset) ? 'public, max-age=86400' : 'private, no-store'
+    isPublicNgaAsset(asset)
+      ? 'public, max-age=86400'
+      : privateNgs
+        ? PRIVATE_REVALIDATE
+        : 'private, no-store'
   );
+  if (privateNgs) headers.set('Vary', 'Authorization');
 
   if (asset.mime_type && !headers.has('Content-Type')) {
     headers.set('Content-Type', asset.mime_type);

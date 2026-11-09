@@ -20,7 +20,10 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { PUBLIC_SEARCH_CONTRACT_VERSION } from '@paillette/types/public-search-core';
+import {
+  PUBLIC_SEARCH_CONTRACT_VERSION,
+  NGS_PREPARED_SPOTLIGHT_REVISION,
+} from '@paillette/types/public-search-core';
 import { useDropzone } from 'react-dropzone';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -129,12 +132,14 @@ import {
   rankByPaletteColour,
 } from '~/lib/local-colour-refinement';
 import {
-  getSpotlightArtworks,
+  getSpotlightHighlightArtworks,
   getSpotlightSearchPlaceholder,
   getSpotlightSearchSubmissionOptions,
   loadSearchSpotlightBundle,
 } from '~/lib/search-spotlights';
 import { selectIdleShowcaseArtworks } from '~/lib/idle-showcase';
+import { prefetchNgsSpotlightThumbnails } from '~/lib/ngs-spotlight-thumbnails';
+import { IdleShowcaseImage } from '~/lib/idle-showcase-image';
 import { apiClient } from '~/lib/api';
 import {
   canRetryNgaSearch,
@@ -1346,6 +1351,7 @@ export default function SearchPage() {
       'search-spotlights',
       PUBLIC_SEARCH_CONTRACT_VERSION,
       spotlightProvider,
+      spotlightProvider === 'ngs' ? NGS_PREPARED_SPOTLIGHT_REVISION : null,
     ] as const,
     queryFn: ({ signal }) => {
       if (!spotlightProvider) return null;
@@ -1355,11 +1361,28 @@ export default function SearchPage() {
       });
     },
     enabled: shouldLoadSpotlights,
-    staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
+    staleTime: isNgsSearch ? 5 * 60_000 : PUBLIC_SEARCH_QUERY_STALE_TIME,
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
-    retry: false,
+    retry: isNgsSearch ? 1 : false,
   });
   const spotlightBundle = isNgsSearchLocked ? null : spotlightBundleQuery.data;
+  useEffect(() => {
+    if (
+      !isNgsSearch ||
+      searchAccess !== 'approved' ||
+      !spotlightBundle ||
+      hasActiveSearch
+    )
+      return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void prefetchNgsSpotlightThumbnails(spotlightBundle, controller.signal);
+    }, 500);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [isNgsSearch, searchAccess, spotlightBundle, hasActiveSearch]);
 
   const ngaSearchQuotaQuery = useQuery({
     queryKey: getNgaSearchQuotaQueryKey(),
@@ -1369,12 +1392,22 @@ export default function SearchPage() {
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
     retry: false,
   });
-  const ngaSearchQuota = isNgaSearch ? ngaSearchQuotaQuery.data ?? null : null;
+  const ngaSearchQuota = isNgaSearch
+    ? (ngaSearchQuotaQuery.data ?? null)
+    : null;
   const hasExhaustedNgaSearchQuota =
     isNgaSearch && ngaSearchQuota?.remaining === 0;
   const isSearchDisabled = isNgsSearchLocked || hasExhaustedNgaSearchQuota;
   const canSearchOnPage = !isSearchDisabled;
 
+  const activeIdleSuggestion = idleSuggestion || suggestionPool[0] || null;
+  const activeSpotlightSuggestionId =
+    activeIdleSuggestion?.spotlightId &&
+    spotlightBundle?.suggestions.some(
+      (suggestion) => suggestion.id === activeIdleSuggestion.spotlightId
+    )
+      ? activeIdleSuggestion.spotlightId
+      : null;
   const spotlightSearchPlaceholder = useMemo(
     () =>
       textSearchPlan
@@ -1593,7 +1626,6 @@ export default function SearchPage() {
     enabled: hasMounted && isBrowsingCollection && canSearchOnPage,
   });
 
-  const activeIdleSuggestion = idleSuggestion || suggestionPool[0] || null;
   const currentQuery =
     submittedSearch?.kind === 'image' ? imageSearchQuery : textSearchQuery;
   const rankedRawResults = currentQuery.data?.results || [];
@@ -1670,22 +1702,14 @@ export default function SearchPage() {
     isLoading,
     view,
   });
-  const activeSpotlightSuggestionId = useMemo(() => {
-    if (!activeIdleSuggestion) return null;
-
-    const spotlightId = activeIdleSuggestion.spotlightId;
-    return spotlightId &&
-      spotlightBundle?.suggestions.some(
-        (suggestion) => suggestion.id === spotlightId
-      )
-      ? spotlightId
-      : null;
-  }, [activeIdleSuggestion, spotlightBundle?.suggestions]);
   const idleShowcaseResults = useMemo(
     () =>
       activeSpotlightSuggestionId
         ? selectIdleShowcaseArtworks(
-            getSpotlightArtworks(spotlightBundle, activeSpotlightSuggestionId)
+            getSpotlightHighlightArtworks(
+              spotlightBundle,
+              activeSpotlightSuggestionId
+            )
           )
         : [],
     [activeSpotlightSuggestionId, spotlightBundle]
@@ -2554,9 +2578,10 @@ export default function SearchPage() {
                     value={textQuery}
                     onChange={(event) => updateTextDraft(event.target.value)}
                     autoFocus
+                    aria-label="Search the collection"
                     placeholder="search by feeling, era, subject..."
                     disabled={isSearchDisabled}
-                    className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-20 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/25 focus:border-fuchsia-400 sm:pr-36 lg:text-5xl disabled:cursor-not-allowed disabled:bg-white/[0.04] disabled:opacity-45"
+                    className="w-full border-b-2 border-white/20 bg-transparent py-5 pl-10 pr-20 font-display text-3xl italic outline-none transition-colors placeholder:not-italic placeholder:text-white/60 focus:border-fuchsia-400 sm:pr-36 lg:text-5xl disabled:cursor-not-allowed disabled:bg-white/[0.04] disabled:opacity-45"
                   />
                   <button
                     type="submit"
@@ -2723,6 +2748,31 @@ export default function SearchPage() {
                     disabled={isSearchDisabled}
                   />
                 )}
+                {isNgsSearch &&
+                  shouldLoadSpotlights &&
+                  !hasActiveSearch &&
+                  spotlightBundleQuery.isError && (
+                    <div
+                      role="status"
+                      className="w-full text-center text-xs text-white/70"
+                    >
+                      {spotlightBundle
+                        ? 'Couldn’t refresh highlights. These cached previews are still available.'
+                        : 'Highlights are temporarily unavailable.'}{' '}
+                      <button
+                        type="button"
+                        className="underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-fuchsia-300"
+                        disabled={spotlightBundleQuery.isFetching}
+                        onClick={() => {
+                          void spotlightBundleQuery.refetch();
+                        }}
+                      >
+                        {spotlightBundleQuery.isFetching
+                          ? 'Retrying…'
+                          : 'Retry highlights'}
+                      </button>
+                    </div>
+                  )}
                 {!hasActiveSearch && editorMode === 'colour' && (
                   <div ref={colourRailRef} className="w-full">
                     <ColourRail
@@ -2752,19 +2802,21 @@ export default function SearchPage() {
               <div className="mx-auto max-w-7xl">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/45">
-                    {isBrowsingCollection
-                      ? isLoading && !results.length
-                        ? 'Loading collection'
-                        : visibleRankedResults.length
-                          ? `${visibleRankedResults.length} ranked + ${visibleBrowseResults.length} / ${totalBrowseResults} browse works`
-                          : `${visibleBrowseResults.length} / ${totalBrowseResults} works`
-                      : isLoading
-                        ? 'Searching'
-                        : results.length
-                          ? `${visibleResults.length} / ${results.length} works`
-                          : hasMounted && shouldSearch
-                            ? 'No works'
-                            : 'Ready'}
+                    {isNgsSearchLocked
+                      ? 'Sign in with approved access to search'
+                      : isBrowsingCollection
+                        ? isLoading && !results.length
+                          ? 'Loading collection'
+                          : visibleRankedResults.length
+                            ? `${visibleRankedResults.length} ranked + ${visibleBrowseResults.length} / ${totalBrowseResults} browse works`
+                            : `${visibleBrowseResults.length} / ${totalBrowseResults} works`
+                        : isLoading
+                          ? 'Searching'
+                          : results.length
+                            ? `${visibleResults.length} / ${results.length} works`
+                            : hasMounted && shouldSearch
+                              ? 'No works'
+                              : 'Ready'}
                     {(submittedSearch?.kind === 'text' ||
                       submittedSearch?.kind === 'colour') && (
                       <span className="ml-2 normal-case tracking-normal text-white/70">
@@ -3623,39 +3675,6 @@ const getShowcaseImageUrl = (artwork?: ArtworkSearchResult | null) =>
 
 const SHOWCASE_TRANSITION_MS = 420;
 
-const preloadShowcaseImage = (src: string) =>
-  new Promise<void>((resolve) => {
-    const image = new Image();
-    let settled = false;
-
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      resolve();
-    };
-
-    const decodeThenFinish = () => {
-      if (typeof image.decode === 'function') {
-        void image
-          .decode()
-          .catch(() => undefined)
-          .finally(finish);
-        return;
-      }
-
-      finish();
-    };
-
-    image.decoding = 'async';
-    image.onload = decodeThenFinish;
-    image.onerror = finish;
-    image.src = src;
-
-    if (image.complete) {
-      decodeThenFinish();
-    }
-  });
-
 type ShowcaseLayerModel = {
   key: string;
   works: ArtworkSearchResult[];
@@ -3787,17 +3806,11 @@ const IdleShowcaseBackdrop = forwardRef<
     const runId = transitionRunRef.current + 1;
     transitionRunRef.current = runId;
 
-    const transitionToBufferedWorks = async () => {
+    // Reveal the layer immediately; each real image owns its loading deadline.
+    const transitionToWorks = () => {
       setIncomingLayer(null);
       setIsCrossfading(false);
       setSuppressCommittedTransition(false);
-
-      await Promise.allSettled(
-        previewWorks
-          .map(getShowcaseImageUrl)
-          .filter((src): src is string => Boolean(src))
-          .map(preloadShowcaseImage)
-      );
 
       if (cancelled || runId !== transitionRunRef.current) return;
 
@@ -3842,7 +3855,7 @@ const IdleShowcaseBackdrop = forwardRef<
       });
     };
 
-    void transitionToBufferedWorks();
+    transitionToWorks();
 
     return () => {
       cancelled = true;
@@ -3861,6 +3874,7 @@ const IdleShowcaseBackdrop = forwardRef<
     >
       <div className="pointer-events-none absolute inset-0">
         <IdleShowcaseLayer
+          key={committedLayer.key}
           layer={committedLayer}
           isLoading={isLoading}
           isVisible={!incomingLayer || !isCrossfading}
@@ -3870,6 +3884,7 @@ const IdleShowcaseBackdrop = forwardRef<
         />
         {incomingLayer && (
           <IdleShowcaseLayer
+            key={incomingLayer.key}
             layer={incomingLayer}
             isLoading={isLoading}
             isVisible={isCrossfading}
@@ -3924,6 +3939,9 @@ function IdleShowcaseLayer({
       data-showcase-suggestion={layer.suggestion?.query || ''}
     >
       {showcaseItems.map((artwork, index) => {
+        // No artwork means no action: avoid invisible generic View buttons
+        // during initial prepared-data loading and recovery.
+        if (!artwork) return null;
         const itemLayout = layout[index];
         const image = artwork
           ? getArtworkImageSources(artwork, 'thumbnail')
@@ -3957,22 +3975,34 @@ function IdleShowcaseLayer({
             }}
           >
             {image.src ? (
-              <span className="relative block w-fit max-w-full overflow-hidden">
-                <ImageWithFallback
+              <span
+                className="relative block w-fit max-w-full overflow-hidden border border-white/[0.08] bg-white/[0.05]"
+                style={{
+                  minWidth: 'min(17.6vh, 16rem)',
+                  minHeight: 'min(22vh, 20rem)',
+                }}
+              >
+                <IdleShowcaseImage
+                  loadingFallback={
+                    <span className="absolute inset-0 flex items-center justify-center pb-10 text-xs text-white/70">
+                      Loading image
+                    </span>
+                  }
                   src={image.src}
                   fallbackSrc={image.fallbackSrc}
                   alt=""
                   protectFromDownload
                   loading="eager"
                   decoding="async"
-                  className="block max-w-full object-contain"
+                  className="relative block max-w-full object-contain"
                   style={{ height: 'min(22vh, 20rem)', width: 'auto' }}
                   fallback={
                     <div
-                      className={`aspect-[4/5] w-full border border-white/[0.08] bg-white/[0.05] ${
-                        isLoading ? 'animate-pulse' : ''
-                      }`}
-                    />
+                      className="relative w-full bg-[#151519]"
+                      style={{ height: 'min(22vh, 20rem)' }}
+                    >
+                      <NoImagePlaceholder className="pb-10 text-white/70" />
+                    </div>
                   }
                 />
                 <span className="pointer-events-none absolute inset-x-0 bottom-0 min-w-0 max-w-full overflow-hidden bg-gradient-to-t from-black/90 via-black/55 to-transparent px-3 pb-3 pt-16 opacity-95 transition duration-200 group-hover:opacity-100 group-focus-visible:opacity-100">
@@ -5222,6 +5252,7 @@ function ResultCard({
       <button
         type="button"
         onClick={() => onSelectArtwork(result)}
+        aria-label={`View ${title}`}
         className="group block w-full appearance-none border-0 bg-transparent p-0 text-left"
       >
         <div

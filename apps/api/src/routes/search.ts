@@ -33,8 +33,11 @@ import {
   getPublicSearchRequestClientIdentity,
 } from '../utils/public-search-cold-miss-rate-limit';
 import { getOrLoadPublicSearchResult } from '../utils/public-search-result-cache';
+import { readNgsPreparedBundle } from '../utils/ngs-prepared-spotlights';
 import {
   PUBLIC_SEARCH_CONTRACT_VERSION,
+  NGS_PREPARED_SPOTLIGHT_REVISION,
+  type PublicSearchSpotlightBundle,
   PublicSearchSpotlightBundleSchema,
   normalizePublicSearchConstraints,
   normalizePublicSearchText,
@@ -1785,6 +1788,27 @@ async function getArtworksByIds(
   return new Map(artworks.map((artwork) => [artwork.id, artwork]));
 }
 
+// Internal trusted preparation only. A reviewed thematic selection must not
+// depend on whether a particular embedding backend ranks its ID in the top 30.
+export async function loadNgsCuratedHighlightArtworks(
+  env: Pick<Env, 'DB'>,
+  orgId: string,
+  ids: readonly string[]
+): Promise<ArtworkSearchResult[]> {
+  const uniqueIds = [...new Set(ids)];
+  if (!isNgsPublicOrg(orgId) || uniqueIds.length > 4) throw new Error('Invalid NGS curated highlight scope');
+  // BACKABLE_NGS_PUBLIC_ARTWORK_SQL enforces authoritative NGS institution,
+  // collection/source and hidden-Roots eligibility. Legacy eligible records
+  // may lack the optional custom_metadata.provider tag; it is not identity.
+  const rows = await getArtworksByIds(env.DB, uniqueIds, orgId);
+  // Same exact-ID/metadata lookup convention as existing metadata matches,
+  // not a newly measured semantic score. Never add these to canonical results.
+  return uniqueIds.flatMap(id => {
+    const row = rows.get(id);
+    return row ? [mapSearchRow(row, 1)] : [];
+  });
+}
+
 export type NgaAttributionSearchScope = {
   orgId?: string;
   provider: 'nga';
@@ -1988,7 +2012,7 @@ export async function searchNgaAttributionMatches(
   return approved;
 }
 
-async function searchArtworksHybrid(
+export async function searchArtworksHybrid(
   env: Env,
   orgId: string | undefined,
   provider: string | undefined,
@@ -2929,24 +2953,24 @@ const rewriteCachedAssetOrigin = (
   return value;
 };
 
-const getNgsSearchSpotlightBundle = (origin: string) => ({
-  ...ngsSearchSpotlightBundle,
-  suggestions: ngsSearchSpotlightBundle.suggestions.map((suggestion) => ({
+const rewriteSpotlightArtwork = (
+  artwork: PublicSearchSpotlightBundle['suggestions'][number]['artworks'][number],
+  origin: string
+) => ({
+  ...artwork,
+  ...(artwork.imageUrl ? { imageUrl: rewriteCachedAssetOrigin(artwork.imageUrl, origin) } : {}),
+  ...(artwork.thumbnailUrl ? { thumbnailUrl: rewriteCachedAssetOrigin(artwork.thumbnailUrl, origin) } : {}),
+});
+
+const getNgsSearchSpotlightBundle = (
+  origin: string,
+  bundle: PublicSearchSpotlightBundle = ngsSearchSpotlightBundle
+) => ({
+  ...bundle,
+  suggestions: bundle.suggestions.map((suggestion) => ({
     ...suggestion,
-    artworks: suggestion.artworks.map((artwork) => ({
-      ...artwork,
-      ...(artwork.imageUrl
-        ? { imageUrl: rewriteCachedAssetOrigin(artwork.imageUrl, origin) }
-        : {}),
-      ...(artwork.thumbnailUrl
-        ? {
-            thumbnailUrl: rewriteCachedAssetOrigin(
-              artwork.thumbnailUrl,
-              origin
-            ),
-          }
-        : {}),
-    })),
+    artworks: suggestion.artworks.map(artwork => rewriteSpotlightArtwork(artwork, origin)),
+    ...(suggestion.highlightArtworks ? { highlightArtworks: suggestion.highlightArtworks.map(artwork => rewriteSpotlightArtwork(artwork, origin)) } : {}),
   })),
 });
 
@@ -2955,9 +2979,10 @@ const getNgsSpotlightSearchResponse = (
   origin: string,
   facet: 'artist' | 'classification' | undefined,
   topK: number,
-  minScore: number
+  minScore: number,
+  prepared?: PublicSearchSpotlightBundle
 ): SearchResponse | undefined => {
-  const bundle = getNgsSearchSpotlightBundle(origin);
+  const bundle = getNgsSearchSpotlightBundle(origin, prepared);
   const normalizedQuery =
     normalizePublicSearchText(query).toLocaleLowerCase('en-US');
   if (!normalizedQuery) return undefined;
@@ -3030,6 +3055,28 @@ searchRoutes.get(
   requireAuthOrApiKey as any,
   async (c) => {
     const requestedOrgId = c.req.param('orgId') || c.req.param('galleryId');
+    if (
+      isNgsPublicOrg(requestedOrgId) &&
+      c.req.param('revision') === NGS_PREPARED_SPOTLIGHT_REVISION
+    ) {
+      c.header('Cache-Control', 'private, no-store');
+      c.header('Vary', 'Authorization, X-API-Key');
+      const bundle = await readNgsPreparedBundle(c.env.CACHE);
+      if (!bundle) {
+        return c.json({
+          success: false,
+          error: {
+            code: 'NGS_PREPARED_NOT_READY',
+            message: 'Prepared search previews are not ready',
+          },
+        }, 503);
+      }
+      return c.json({
+        success: true,
+        data: getNgsSearchSpotlightBundle(new URL(c.req.url).origin, bundle),
+        meta: { timestamp: bundle.generatedAt },
+      });
+    }
     if (
       !isNgsPublicOrg(requestedOrgId) ||
       c.req.param('revision') !== NGS_SEARCH_SPOTLIGHT_ASSET_REVISION
@@ -3532,6 +3579,11 @@ searchRoutes.post('/search/text', async (c) => {
     let responseCacheable = true;
     let searchResponse: SearchResponse;
 
+    const preparedBundle =
+      isNgsPublicSearch && visualRefinement === undefined &&
+      constraints === undefined && topK <= 30 && minScore >= 0.2
+        ? await readNgsPreparedBundle(c.env.CACHE)
+        : undefined;
     const spotlightSearchResponse =
       isNgsPublicSearch &&
       visualRefinement === undefined &&
@@ -3541,7 +3593,8 @@ searchRoutes.post('/search/text', async (c) => {
             new URL(c.req.url).origin,
             facet,
             topK,
-            minScore
+            minScore,
+            preparedBundle
           )
         : undefined;
 

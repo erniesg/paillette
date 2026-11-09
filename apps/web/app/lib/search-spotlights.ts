@@ -1,15 +1,16 @@
 import {
   PUBLIC_SEARCH_CONTRACT_VERSION,
   PUBLIC_SEARCH_SPOTLIGHT_MAX_BYTES,
+  NGS_SEARCH_SPOTLIGHT_MAX_BYTES,
+  NGS_PREPARED_SPOTLIGHT_REVISION,
   normalizePublicSearchText,
 } from '@paillette/types/public-search-core';
 import type { PublicSearchSpotlightBundle } from '@paillette/types/public-search';
 import type { ArtworkSearchResult, SearchResponse } from '~/types';
 import { apiClient } from './api';
 import { NGA_SEARCH_SPOTLIGHT_ASSET_PATH } from './generated-search-spotlight-assets';
-import { NGS_SEARCH_SPOTLIGHT_API_PATH } from './generated-ngs-search-spotlight-asset';
 import { NGA_SPOTLIGHT_DEFINITIONS } from './nga-spotlight-definitions';
-import { NGS_SPOTLIGHT_DEFINITIONS } from './ngs-spotlight-definitions';
+import { NGS_PREPARED_SPOTLIGHT_DEFINITIONS } from './ngs-spotlight-definitions';
 
 type SearchSpotlightProvider = 'nga' | 'ngs';
 type AccessTokenProvider = () => Promise<string | undefined>;
@@ -80,17 +81,18 @@ const hasExpectedNgaSuggestions = (bundle: PublicSearchSpotlightBundle) => {
 };
 
 const hasExpectedNgsSuggestions = (bundle: PublicSearchSpotlightBundle) => {
-  if (bundle.suggestions.length !== NGS_SPOTLIGHT_DEFINITIONS.length) {
+  if (bundle.suggestions.length !== NGS_PREPARED_SPOTLIGHT_DEFINITIONS.length) {
     return false;
   }
 
   const byId = new Map(
     bundle.suggestions.map((suggestion) => [suggestion.id, suggestion])
   );
-  return NGS_SPOTLIGHT_DEFINITIONS.every((definition) => {
+  return NGS_PREPARED_SPOTLIGHT_DEFINITIONS.every((definition) => {
     const suggestion = byId.get(definition.id);
     return (
       suggestion?.type === definition.type &&
+      Boolean(suggestion.highlightArtworks?.length) &&
       suggestion.label === definition.label &&
       suggestion.query === definition.query &&
       suggestion.dot.toLowerCase() === definition.dot.toLowerCase() &&
@@ -115,15 +117,15 @@ export const getSearchSpotlightPath = (provider: SearchSpotlightProvider) => {
       return NGA_SEARCH_SPOTLIGHT_ASSET_PATH;
     }
     case 'ngs': {
-      const expectedPath = new RegExp(
-        `^/orgs/ngs/search-spotlights/v${PUBLIC_SEARCH_CONTRACT_VERSION}-[a-f0-9]{64}$`
-      );
-      if (!expectedPath.test(NGS_SEARCH_SPOTLIGHT_API_PATH)) {
+      if (
+        NGS_PREPARED_SPOTLIGHT_REVISION !==
+        `prepared-v${PUBLIC_SEARCH_CONTRACT_VERSION}`
+      ) {
         throw new SearchSpotlightValidationError(
-          'NGS spotlight asset does not match the active search contract'
+          'NGS prepared cache does not match the active search contract'
         );
       }
-      return NGS_SEARCH_SPOTLIGHT_API_PATH;
+      return `/orgs/ngs/search-spotlights/${NGS_PREPARED_SPOTLIGHT_REVISION}`;
     }
   }
 };
@@ -157,7 +159,9 @@ export const loadSearchSpotlightBundle = async (
         })();
   if (
     new TextEncoder().encode(text).byteLength >
-    PUBLIC_SEARCH_SPOTLIGHT_MAX_BYTES
+    (provider === 'ngs'
+      ? NGS_SEARCH_SPOTLIGHT_MAX_BYTES
+      : PUBLIC_SEARCH_SPOTLIGHT_MAX_BYTES)
   ) {
     throw new SearchSpotlightValidationError(
       `${provider.toUpperCase()} spotlight asset exceeds its size limit`
@@ -223,6 +227,28 @@ export const getSpotlightArtworks = (
       },
     }))
   );
+};
+
+export const getSpotlightHighlightArtworks = (
+  bundle: PublicSearchSpotlightBundle | null | undefined,
+  suggestionId: string
+): ArtworkSearchResult[] => {
+  const suggestion = bundle?.suggestions.find(
+    (candidate) => candidate.id === suggestionId
+  );
+  if (!bundle || !suggestion) return [];
+  // Full explicit search results stay separate from the small thematic display.
+  return suggestion.highlightArtworks
+    ? getSpotlightArtworks(
+        {
+          ...bundle,
+          suggestions: [
+            { ...suggestion, artworks: suggestion.highlightArtworks },
+          ],
+        },
+        suggestionId
+      )
+    : getSpotlightArtworks(bundle, suggestionId);
 };
 
 export const getSpotlightSearchPlaceholder = (

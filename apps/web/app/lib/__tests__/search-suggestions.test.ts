@@ -5,6 +5,7 @@ import {
   normalizeSearchQuery,
 } from '../search-suggestions';
 import type { HolidaySearchSuggestion } from '../singapore-holidays.server';
+import { NGS_HOLIDAY_SPOTLIGHT_DEFINITIONS } from '../ngs-spotlight-definitions';
 
 const holiday = (
   overrides: Partial<HolidaySearchSuggestion> = {}
@@ -21,6 +22,20 @@ const holiday = (
 });
 
 describe('buildSuggestionPool', () => {
+  it.each(NGS_HOLIDAY_SPOTLIGHT_DEFINITIONS)(
+    'connects $label to a prepared result set, including future rotation dates',
+    (definition) => {
+      const suggestions = buildSuggestionPool(
+        [holiday({ label: definition.label, query: definition.query })],
+        { routeId: 'ngs' }
+      );
+      expect(suggestions[0]?.spotlightId).toBe(definition.id);
+      expect(suggestions).toHaveLength(11);
+      expect(
+        suggestions.filter((suggestion) => suggestion.type === 'occasion')
+      ).toHaveLength(1);
+    }
+  );
   it('starts with the evergreen keyword', () => {
     const suggestions = buildSuggestionPool([]);
 
