@@ -20,7 +20,10 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { PUBLIC_SEARCH_CONTRACT_VERSION } from '@paillette/types/public-search-core';
+import {
+  PUBLIC_SEARCH_CONTRACT_VERSION,
+  NGS_PREPARED_SPOTLIGHT_REVISION,
+} from '@paillette/types/public-search-core';
 import { useDropzone } from 'react-dropzone';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -135,10 +138,7 @@ import {
   loadSearchSpotlightBundle,
 } from '~/lib/search-spotlights';
 import { selectIdleShowcaseArtworks } from '~/lib/idle-showcase';
-import {
-  getIdleSearchPreviewKey,
-  useIdleSearchPreview,
-} from '~/lib/idle-search-preview';
+import { prefetchNgsSpotlightThumbnails } from '~/lib/ngs-spotlight-thumbnails';
 import { IdleShowcaseImage } from '~/lib/idle-showcase-image';
 import { apiClient } from '~/lib/api';
 import {
@@ -1351,6 +1351,7 @@ export default function SearchPage() {
       'search-spotlights',
       PUBLIC_SEARCH_CONTRACT_VERSION,
       spotlightProvider,
+      spotlightProvider === 'ngs' ? NGS_PREPARED_SPOTLIGHT_REVISION : null,
     ] as const,
     queryFn: ({ signal }) => {
       if (!spotlightProvider) return null;
@@ -1360,11 +1361,28 @@ export default function SearchPage() {
       });
     },
     enabled: shouldLoadSpotlights,
-    staleTime: PUBLIC_SEARCH_QUERY_STALE_TIME,
+    staleTime: isNgsSearch ? 5 * 60_000 : PUBLIC_SEARCH_QUERY_STALE_TIME,
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
-    retry: false,
+    retry: isNgsSearch ? 1 : false,
   });
   const spotlightBundle = isNgsSearchLocked ? null : spotlightBundleQuery.data;
+  useEffect(() => {
+    if (
+      !isNgsSearch ||
+      searchAccess !== 'approved' ||
+      !spotlightBundle ||
+      hasActiveSearch
+    )
+      return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void prefetchNgsSpotlightThumbnails(spotlightBundle, controller.signal);
+    }, 500);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [isNgsSearch, searchAccess, spotlightBundle, hasActiveSearch]);
 
   const ngaSearchQuotaQuery = useQuery({
     queryKey: getNgaSearchQuotaQueryKey(),
@@ -1390,40 +1408,6 @@ export default function SearchPage() {
     )
       ? activeIdleSuggestion.spotlightId
       : null;
-  const idlePreviewPlan = useMemo(
-    () =>
-      buildPublicTextSearchPlan({
-        orgId: publicSearchOrgId,
-        committedTextQuery: activeIdleSuggestion?.query || '',
-        facet: activeIdleSuggestion?.facet || null,
-        colourQuery: null,
-        topK,
-        minScore,
-      }),
-    [activeIdleSuggestion, publicSearchOrgId, topK, minScore]
-  );
-  const idlePreviewQuery = useIdleSearchPreview({
-    plan: idlePreviewPlan,
-    enabled:
-      hasMounted &&
-      isNgsSearch &&
-      searchAccess === 'approved' &&
-      !hasActiveSearch &&
-      !activeIdleSuggestion?.spotlightId &&
-      !activeIdleSuggestion?.colourId,
-    getAccessToken,
-  });
-  const submittedPreviewPlaceholder =
-    isNgsSearch &&
-    searchAccess === 'approved' &&
-    submittedSearch?.kind === 'text' &&
-    textSearchPlan &&
-    !submittedTextOwner?.explicitConstraints
-      ? queryClient.getQueryData<SearchResponse>(
-          getIdleSearchPreviewKey(textSearchPlan)
-        )
-      : undefined;
-
   const spotlightSearchPlaceholder = useMemo(
     () =>
       textSearchPlan
@@ -1577,9 +1561,7 @@ export default function SearchPage() {
     retry: false,
     staleTime: isNgsSearch ? 0 : PUBLIC_SEARCH_QUERY_STALE_TIME,
     gcTime: PUBLIC_SEARCH_QUERY_GC_TIME,
-    ...getSpotlightSearchSubmissionOptions(
-      submittedPreviewPlaceholder || spotlightSearchPlaceholder
-    ),
+    ...getSpotlightSearchSubmissionOptions(spotlightSearchPlaceholder),
     refetchOnMount: Boolean(submittedSearch),
   });
 
@@ -1726,22 +1708,11 @@ export default function SearchPage() {
         ? selectIdleShowcaseArtworks(
             getSpotlightArtworks(spotlightBundle, activeSpotlightSuggestionId)
           )
-        : isNgsSearch && searchAccess === 'approved'
-          ? selectIdleShowcaseArtworks(idlePreviewQuery.data?.results || [])
-          : [],
-    [
-      activeSpotlightSuggestionId,
-      spotlightBundle,
-      isNgsSearch,
-      searchAccess,
-      idlePreviewQuery.data,
-    ]
+        : [],
+    [activeSpotlightSuggestionId, spotlightBundle]
   );
   const isIdleShowcaseLoading =
-    (shouldLoadSpotlights && spotlightBundleQuery.isLoading) ||
-    (isNgsSearch &&
-      !activeSpotlightSuggestionId &&
-      idlePreviewQuery.isFetching);
+    shouldLoadSpotlights && spotlightBundleQuery.isLoading;
   const visibleIdleSuggestion = displayIdleSuggestion || activeIdleSuggestion;
   const isChungChengFeatureActive =
     !hasActiveSearch && isChungChengFeatureSuggestion(visibleIdleSuggestion);
@@ -2770,9 +2741,16 @@ export default function SearchPage() {
                     displaySuggestion={displayIdleSuggestion}
                     onSelect={runEvalSearch}
                     onPreviewChange={setIdleSuggestion}
-                    pauseRotation={idlePreviewQuery.isFetching}
                     disabled={isSearchDisabled}
                   />
+                )}
+                {isNgsSearch && shouldLoadSpotlights && !hasActiveSearch && spotlightBundleQuery.isError && (
+                  <div role="status" className="w-full text-center text-xs text-white/70">
+                    Highlights are temporarily unavailable.{' '}
+                    <button type="button" className="underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-fuchsia-300" disabled={spotlightBundleQuery.isFetching} onClick={() => { void spotlightBundleQuery.refetch(); }}>
+                      {spotlightBundleQuery.isFetching ? 'Retrying…' : 'Retry highlights'}
+                    </button>
+                  </div>
                 )}
                 {!hasActiveSearch && editorMode === 'colour' && (
                   <div ref={colourRailRef} className="w-full">
@@ -3446,7 +3424,6 @@ function SuggestionPicker({
   displaySuggestion,
   onSelect,
   onPreviewChange,
-  pauseRotation = false,
   disabled = false,
 }: {
   suggestions: EvalSuggestion[];
@@ -3455,7 +3432,6 @@ function SuggestionPicker({
   displaySuggestion?: EvalSuggestion | null;
   onSelect: (suggestion: EvalSuggestion) => void;
   onPreviewChange?: (suggestion: EvalSuggestion) => void;
-  pauseRotation?: boolean;
   disabled?: boolean;
 }) {
   const [index, setIndex] = useState(0);
@@ -3472,13 +3448,7 @@ function SuggestionPicker({
   }, [suggestions.length]);
 
   useEffect(() => {
-    if (
-      activeSearch ||
-      open ||
-      paused ||
-      pauseRotation ||
-      suggestions.length < 2
-    ) {
+    if (activeSearch || open || paused || suggestions.length < 2) {
       return undefined;
     }
 
@@ -3487,7 +3457,7 @@ function SuggestionPicker({
     }, 9000);
 
     return () => window.clearInterval(handle);
-  }, [activeSearch, open, paused, pauseRotation, suggestions.length]);
+  }, [activeSearch, open, paused, suggestions.length]);
 
   useEffect(() => {
     if (activeSearch) return;

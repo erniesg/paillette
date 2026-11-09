@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { Env } from '../../src/index';
 import type { AuthPrincipal } from '../../src/middleware/auth';
@@ -46,6 +46,128 @@ const asset = (
   org_id: orgId,
   org_slug: orgSlug,
   artwork_provider: artworkProvider,
+});
+
+const viewer: AuthPrincipal = {
+  kind: 'user',
+  userId: 'viewer-1',
+  scopes: [],
+  searchAccess: {
+    granted: true,
+    internalUserId: 'viewer-1',
+    reason: 'authenticated',
+  },
+};
+const storedAsset = (orgSlug = 'national-gallery-singapore') => ({
+  ...asset('org-1', orgSlug),
+  storage_provider: 'r2',
+  object_key: 'ngs/thumb.jpg',
+  url: null,
+});
+const storedObject = (etag = '"image-v1"') => ({
+  body: new Uint8Array([1, 2, 3]),
+  httpEtag: etag,
+  writeHttpMetadata(headers: Headers) {
+    headers.set('Content-Type', 'image/jpeg');
+  },
+});
+
+describe('private NGS image byte reuse', () => {
+  it('stores bytes privately but requires revalidation on every reuse', async () => {
+    const get = vi.fn().mockResolvedValue(storedObject());
+    const response = await makeApp(viewer).request(
+      '/api/v1/assets/asset-1/content',
+      {
+        headers: { Authorization: 'Bearer approved' },
+      },
+      { DB: makeDb(storedAsset()), IMAGES: { get } } as unknown as Env
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe(
+      'private, no-cache, must-revalidate'
+    );
+    expect(response.headers.get('Vary')).toBe('Authorization');
+    expect(response.headers.get('ETag')).toBe('"image-v1"');
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(
+      new Uint8Array([1, 2, 3])
+    );
+  });
+
+  it('authorizes before returning 304 without downloading stored bytes again', async () => {
+    const head = vi.fn().mockResolvedValue(storedObject());
+    const get = vi.fn();
+    const response = await makeApp(viewer).request(
+      '/api/v1/assets/asset-1/content',
+      {
+        headers: {
+          Authorization: 'Bearer approved',
+          'If-None-Match': 'W/"image-v1", "other"',
+        },
+      },
+      { DB: makeDb(storedAsset()), IMAGES: { head, get } } as unknown as Env
+    );
+    expect(response.status).toBe(304);
+    expect(await response.text()).toBe('');
+    expect(response.headers.get('Cache-Control')).toBe(
+      'private, no-cache, must-revalidate'
+    );
+    expect(head).toHaveBeenCalledWith('ngs/thumb.jpg');
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it.each(['anonymous', 'revoked', 'another-org'] as const)(
+    'never serves bytes or 304 to %s even with a matching ETag',
+    async (scenario) => {
+      const principal =
+        scenario === 'anonymous'
+          ? undefined
+          : scenario === 'revoked'
+            ? { kind: 'user' as const, userId: 'viewer-1', scopes: [] }
+            : viewer;
+      const head = vi.fn().mockResolvedValue(storedObject());
+      const get = vi.fn();
+      const response = await makeApp(principal).request(
+        '/api/v1/assets/asset-1/content',
+        {
+          headers: {
+            ...(scenario === 'anonymous'
+              ? {}
+              : { Authorization: 'Bearer test' }),
+            'If-None-Match': '"image-v1"',
+          },
+        },
+        {
+          DB: makeDb(
+            storedAsset(
+              scenario === 'another-org' ? 'other-private-org' : undefined
+            )
+          ),
+          IMAGES: { head, get },
+        } as unknown as Env
+      );
+      expect(response.status).toBe(404);
+      expect(head).not.toHaveBeenCalled();
+      expect(get).not.toHaveBeenCalled();
+    }
+  );
+
+  it('downloads a changed stored thumbnail instead of falsely validating old bytes', async () => {
+    const head = vi.fn().mockResolvedValue(storedObject('"image-v2"'));
+    const get = vi.fn().mockResolvedValue(storedObject('"image-v2"'));
+    const response = await makeApp(viewer).request(
+      '/api/v1/assets/asset-1/content',
+      {
+        headers: {
+          Authorization: 'Bearer approved',
+          'If-None-Match': '"image-v1"',
+        },
+      },
+      { DB: makeDb(storedAsset()), IMAGES: { head, get } } as unknown as Env
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get('ETag')).toBe('"image-v2"');
+    expect(get).toHaveBeenCalledOnce();
+  });
 });
 
 describe('asset authorization', () => {

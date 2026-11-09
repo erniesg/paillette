@@ -145,6 +145,19 @@ describe('NGS prepared catalogue and trusted refresh', () => {
     expect(put).not.toHaveBeenCalled();
   });
 
+  it('can prepare a genuine single-result term instead of requiring or inventing four works', async () => {
+    const { env, head } = makeEnv();
+    search.mockResolvedValue([result(0)]);
+    const refreshed = await refreshNgsPreparedSpotlights(env);
+    expect(refreshed.published).toBe(true);
+    expect(
+      refreshed.bundle.suggestions.every(
+        (suggestion) => suggestion.artworks.length === 1
+      )
+    ).toBe(true);
+    expect(head).toHaveBeenCalledOnce();
+  });
+
   it('supports a full dry run without modifying last good', async () => {
     const { env, put } = makeEnv();
     expect(

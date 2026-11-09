@@ -26,7 +26,7 @@ export const validateNgsPreparedBundle = (value: unknown) => {
         suggestion.query !== definition.query ||
         suggestion.label !== definition.label ||
         suggestion.type !== definition.type ||
-        suggestion.artworks.length < 4 ||
+        suggestion.artworks.length < 1 ||
         suggestion.artworks.some(
           (artwork) =>
             !isNgsPublicOrg(artwork.orgId) ||
@@ -241,9 +241,9 @@ export const refreshNgsPreparedSpotlights = async (
           displayIdentities.add(identity);
           return true;
         });
-        if (artworks.length < 4)
+        if (!artworks.length)
           throw new Error(
-            `NGS preview needs four real imageable results: ${definition.id}`
+            `NGS preview needs real imageable results: ${definition.id}`
           );
         const objects = new Set<string>();
         for (const artwork of artworks.slice(0, 4)) {
