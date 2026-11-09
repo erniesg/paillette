@@ -1856,6 +1856,7 @@ export async function searchNgaAttributionMatches(
   const structuredFilter = buildStructuredConstraintSql(constraints);
   const approved: ArtworkSearchResult[] = [];
   const pageSize = Math.min(Math.max(topK * 2, 10), MAX_SEARCH_RESULTS);
+  trace?.count('metadataTopK', pageSize);
   let offset = 0;
 
   while (approved.length < topK) {
@@ -3416,8 +3417,8 @@ searchRoutes.post('/search/text', async (c) => {
         : retrievalTopK;
 
       trace.count('effectiveTopK', candidateTopK);
-      if (facet || ngaPlan?.mode === 'attribution') {
-        trace.count('metadataTopK', ngaPlan?.mode === 'attribution' ? topK : retrievalTopK);
+      if (facet && ngaPlan?.mode !== 'attribution') {
+        trace.count('metadataTopK', retrievalTopK);
       }
       const baseResults = await trace.run('retrieval', async () =>
         ngaPlan?.mode === 'attribution' && ngaPlan.attribution
