@@ -1703,7 +1703,7 @@ indexing.post('/jobs/:jobId/search', async (c) => {
   // Intent filters cull after scoring, preserving vector rank order; the
   // page is then cut back to topK so filtered searches behave like plain
   // ones from the caller's point of view.
-  let filteredResults =
+  const filteredResults =
     intent && hasFilters
       ? results
           .filter((result) =>
